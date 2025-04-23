@@ -1,0 +1,20 @@
+# Python environment
+myenv/
+venv/
+.env
+
+# Vector databases
+chroma_db/
+new_chroma_db/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.sqlite3
+
+# VS Code settings (optional, if you're using it)
+.vscode/
+
+# MacOS / Linux / Windows system files
+.DS_Store
+Thumbs.db
