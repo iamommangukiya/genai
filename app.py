@@ -43,7 +43,7 @@ if "messages" not in st.session_state:
 
 # Time-based DB expiry
 DB_PATH = "chroma_db"
-DB_EXPIRY_MINUTES = 15
+DB_EXPIRY_MINUTES = 20
 
 if "db_created_time" in st.session_state:
     if datetime.now() - st.session_state.db_created_time > timedelta(minutes=DB_EXPIRY_MINUTES):
@@ -56,6 +56,8 @@ if "db_created_time" in st.session_state:
 # Sidebar for PDF upload
 with st.sidebar:
     st.header("📂 Upload PDF")
+    st.caption("ℹ️ Uploaded PDFs are stored temporarily and will be deleted after 20 minutes.")
+
     uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
     if uploaded_file:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
