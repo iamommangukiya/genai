@@ -2,20 +2,21 @@ import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, GoogleGenerativeAI
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain.chains import create_retrieval_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
+
 import tempfile
 import os
 import re
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
-import shutil
 
+# Load environment variables
 load_dotenv()
 
-# Set Streamlit page configuration
+# Streamlit page config
 st.set_page_config(page_title="📄 Chat with PDF", layout="wide")
 
 # Custom CSS
@@ -33,32 +34,30 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Small talk check
+# Define small talk checker
 def is_small_talk(text):
     return bool(re.search(r"\b(hello|hi|hey|how are you|what's up|good morning|good evening)\b", text, re.I))
 
-# Chat history
+# Track chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Time-based DB expiry
-DB_PATH = "chroma_db"
-DB_EXPIRY_MINUTES = 20
+# Set expiry time for in-memory FAISS
+DB_EXPIRY_MINUTES = 25
 
 if "db_created_time" in st.session_state:
     if datetime.now() - st.session_state.db_created_time > timedelta(minutes=DB_EXPIRY_MINUTES):
-        if os.path.exists(DB_PATH):
-            shutil.rmtree(DB_PATH)
-        st.session_state.pop("db_created_time", None)
         st.session_state.pop("chain", None)
-        st.warning("⚠️ The previous PDF session has expired after 15 minutes. Please re-upload your PDF.")
+        st.session_state.pop("db_created_time", None)
+        st.warning("⚠️ The previous session expired after 25 minutes. Please re-upload your PDF.")
 
 # Sidebar for PDF upload
 with st.sidebar:
     st.header("📂 Upload PDF")
-    st.caption("ℹ️ Uploaded PDFs are stored temporarily and will be deleted after 20 minutes.")
+    st.caption("ℹ️ PDFs are processed in-memory and automatically cleared after 25 minutes.")
 
     uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
+
     if uploaded_file:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(uploaded_file.read())
@@ -69,11 +68,11 @@ with st.sidebar:
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = text_splitter.split_documents(documents)
 
-        st.info("🔍 Creating embeddings... (just once per upload)")
-        db = Chroma.from_documents(
+        st.info("🔍 Creating embeddings...")
+
+        db = FAISS.from_documents(
             docs,
-            GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"),
-            persist_directory=DB_PATH
+            GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
         )
 
         retriever = db.as_retriever()
@@ -93,14 +92,14 @@ with st.sidebar:
         st.session_state.chain = create_retrieval_chain(retriever, doc_chain)
         st.session_state.db_created_time = datetime.now()
 
-# Chat area
+# Main chat interface
 st.title("📄 Chat with Your PDF")
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Input
+# Input and chat
 if uploaded_file and "chain" in st.session_state:
     user_input = st.chat_input("Ask something about the PDF...")
 
@@ -112,10 +111,10 @@ if uploaded_file and "chain" in st.session_state:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 if is_small_talk(user_input):
-                    answer = "👋 Hello! I'm here to help you understand your PDF. Feel free to ask any questions about it."
+                    answer = "👋 Hello! I'm here to help you understand your PDF. Feel free to ask anything about it."
                 else:
                     response = st.session_state.chain.invoke({"input": user_input})
-                    answer = response['answer']
+                    answer = response["answer"]
 
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
