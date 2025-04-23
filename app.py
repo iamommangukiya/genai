@@ -10,12 +10,15 @@ import tempfile
 import os
 import re
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
+import shutil
+
 load_dotenv()
 
 # Set Streamlit page configuration
 st.set_page_config(page_title="📄 Chat with PDF", layout="wide")
 
-# Inject custom CSS
+# Custom CSS
 st.markdown("""
     <style>
     .stChatMessage p {
@@ -30,13 +33,25 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Function to detect small talk
+# Small talk check
 def is_small_talk(text):
     return bool(re.search(r"\b(hello|hi|hey|how are you|what's up|good morning|good evening)\b", text, re.I))
 
-# Initialize chat history
+# Chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+# Time-based DB expiry
+DB_PATH = "chroma_db"
+DB_EXPIRY_MINUTES = 15
+
+if "db_created_time" in st.session_state:
+    if datetime.now() - st.session_state.db_created_time > timedelta(minutes=DB_EXPIRY_MINUTES):
+        if os.path.exists(DB_PATH):
+            shutil.rmtree(DB_PATH)
+        st.session_state.pop("db_created_time", None)
+        st.session_state.pop("chain", None)
+        st.warning("⚠️ The previous PDF session has expired after 15 minutes. Please re-upload your PDF.")
 
 # Sidebar for PDF upload
 with st.sidebar:
@@ -47,23 +62,20 @@ with st.sidebar:
             tmp.write(uploaded_file.read())
             tmp_path = tmp.name
 
-        # Load and split PDF
         loader = PyPDFLoader(tmp_path)
         documents = loader.load()
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = text_splitter.split_documents(documents)
 
-        # Create vectorstore
         st.info("🔍 Creating embeddings... (just once per upload)")
         db = Chroma.from_documents(
             docs,
             GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"),
-            persist_directory="chroma_db"
+            persist_directory=DB_PATH
         )
 
         retriever = db.as_retriever()
 
-        # Setup chain
         prompt = ChatPromptTemplate.from_template("""
         Answer the following question using only the context provided.
         Be clear, concise, and use markdown formatting. Avoid making things up.
@@ -77,28 +89,26 @@ with st.sidebar:
         llm = GoogleGenerativeAI(model="gemini-2.0-flash-001")
         doc_chain = create_stuff_documents_chain(llm, prompt)
         st.session_state.chain = create_retrieval_chain(retriever, doc_chain)
+        st.session_state.db_created_time = datetime.now()
 
-# Main chat interface
+# Chat area
 st.title("📄 Chat with Your PDF")
 
-# Display chat messages from history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Chat input
-if uploaded_file:
+# Input
+if uploaded_file and "chain" in st.session_state:
     user_input = st.chat_input("Ask something about the PDF...")
 
     if user_input:
         st.session_state.messages.append({"role": "user", "content": user_input})
-
         with st.chat_message("user"):
             st.markdown(user_input)
 
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # Handle small talk naturally
                 if is_small_talk(user_input):
                     answer = "👋 Hello! I'm here to help you understand your PDF. Feel free to ask any questions about it."
                 else:
