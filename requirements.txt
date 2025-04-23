@@ -1,4 +1,4 @@
-streamlit
+streamlit==1.32.2
 python-dotenv
 langchain-core
 langchain-community
@@ -12,4 +12,9 @@ uvicorn
 sse-starlette
 langserve
 beautifulsoup4
-sqlite3 >= 3.35.0
+
+# Avoid known conflicts with Streamlit dependencies
+rich==13.7.1
+markdown-it-py==2.2.0
+pygments==2.17.2
+mdurl==0.1.2
